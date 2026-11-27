@@ -444,7 +444,7 @@
   // Returns one of 'NONE','COUNT_UP',... or null
   function parseTrackAnimation(name) {
     if (equalsIgnoreCase(name, 'none') || equalsIgnoreCase(name, 'stop')) return 'NONE';
-    for (const n of ['count_up', 'fill_up', 'count_down', 'filled_down', 'count_down_warning', 'random_toggle']) {
+    for (const n of ['count_up', 'fill_up', 'count_down', 'filled_down', 'count_down_warning', 'random_toggle', 'notif_count']) {
       if (equalsIgnoreCase(name, n)) return n.toUpperCase();
     }
     return null;
@@ -1197,6 +1197,7 @@
           case 'FILLED_DOWN': track.startFilledDown(stepMs); break;
           case 'COUNT_DOWN_WARNING': track.startCountDownWarning(stepMs); break;
           case 'RANDOM_TOGGLE': track.startRandomToggle(stepMs, isTrue(getField(action, 'clearOnStart', 'cs'), true)); break;
+          case 'NOTIF_COUNT': track.startNotifCount(stepMs); break; // host keeps the count live
           default: track.stopAnimation(); break;
         }
         return true;

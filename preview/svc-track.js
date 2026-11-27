@@ -15,6 +15,7 @@
     FILLED_DOWN: 4,
     COUNT_DOWN_WARNING: 5,
     RANDOM_TOGGLE: 6,
+    NOTIF_COUNT: 7, // track.anim name only; runs via startNotifCount()
   });
 
   const kTrackBitByIndex = [
@@ -66,6 +67,11 @@
         this.trackMaskByIndex_[i] = 1n << BigInt(kTrackBitByIndex[i]);
         this.allTracksMask_ |= this.trackMaskByIndex_[i];
       }
+      this.countShown_ = false;
+      this.countTarget_ = 0;
+      this.countLit_ = 0;
+      this.countStepMs_ = 60;
+      this.lastCountStepMs_ = 0;
       // Note: C++ init() does not call rebuildCombinedMask().
     }
 
@@ -92,6 +98,7 @@
     }
 
     startAnimation(animation, stepMs) {
+      this.countShown_ = false;
       stepMs = u32(stepMs);
       this.currentAnimation_ = animation;
       this.animationRunning_ = true;
@@ -153,6 +160,15 @@
           this.swirlEnabled_ = !this.swirlEnabled_;
           this.rebuildCombinedMask();
         }
+      }
+
+      // Notification count bar: step one track toward the target.
+      if (this.countShown_ && this.countLit_ !== this.countTarget_ &&
+          u32(now - this.lastCountStepMs_) >= this.countStepMs_) {
+        this.lastCountStepMs_ = now;
+        this.countLit_ += (this.countLit_ < this.countTarget_) ? 1 : -1;
+        this.setTracksUpToMask(this.countLit_);
+        this.rebuildCombinedMask();
       }
 
       if (!this.animationRunning_ || this.currentAnimation_ === Animation.NONE) return;
@@ -309,6 +325,7 @@
     /** @param {number} trackNumber 1-based (1..20) */
     on(trackNumber) {
       trackNumber = u8(trackNumber);
+      this.countShown_ = false;
       if (this.animationRunning_) this.stopAnimation();
       if (!isValidTrackNumber(trackNumber)) return;
       this.trackMask_ |= this.trackMaskByIndex_[toIndex(trackNumber)];
@@ -317,6 +334,7 @@
 
     off(trackNumber) {
       trackNumber = u8(trackNumber);
+      this.countShown_ = false;
       if (this.animationRunning_) this.stopAnimation();
       if (!isValidTrackNumber(trackNumber)) return;
       this.trackMask_ &= not64(this.trackMaskByIndex_[toIndex(trackNumber)]);
@@ -325,6 +343,7 @@
 
     toggle(trackNumber) {
       trackNumber = u8(trackNumber);
+      this.countShown_ = false;
       if (this.animationRunning_) this.stopAnimation();
       if (!isValidTrackNumber(trackNumber)) return;
       this.trackMask_ ^= this.trackMaskByIndex_[toIndex(trackNumber)];
@@ -332,12 +351,14 @@
     }
 
     onAll() {
+      this.countShown_ = false;
       if (this.animationRunning_) this.stopAnimation();
       this.trackMask_ = this.allTracksMask_;
       this.rebuildCombinedMask();
     }
 
     offAll() {
+      this.countShown_ = false;
       if (this.animationRunning_) this.stopAnimation();
       this.trackMask_ = 0n;
       this.rebuildCombinedMask();
@@ -353,6 +374,21 @@
       if (clearOnStart) this.trackMask_ = 0n;
       this.startAnimation(Animation.RANDOM_TOGGLE, periodMs);
     }
+
+    // Bar of tracks 1..n; the owner feeds n with setNotifCount().
+    startNotifCount(stepMs = 60) {
+      stepMs = u32(stepMs);
+      if (this.animationRunning_) this.stopAnimation();
+      this.countShown_ = true;
+      this.countStepMs_ = stepMs === 0 ? 1 : stepMs;
+      this.countLit_ = 0;
+      this.countTarget_ = 0;
+      this.lastCountStepMs_ = 0;
+      this.trackMask_ = 0n;
+      this.rebuildCombinedMask();
+    }
+    setNotifCount(count) { this.countTarget_ = Math.min(kTrackCount, Math.max(0, count | 0)); }
+    isNotifCountShown() { return this.countShown_; }
 
     startSwirlBlink(periodMs = 500) {
       periodMs = u32(periodMs);

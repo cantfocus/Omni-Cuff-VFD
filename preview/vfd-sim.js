@@ -115,6 +115,9 @@
         if (this.clock) this.clock.update(now);
         this.mic.update(now);
         this.eq.update(now);
+        // track.anim notif_count: the preview's notification count is the test "count".
+        if (this.track.isNotifCountShown())
+          this.track.setNotifCount((NS.tokenContext && NS.tokenContext.count) || 0);
         this.track.update(now);
         this.disc.update(now);
         this.topBar.update(now);

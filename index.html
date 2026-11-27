@@ -388,11 +388,16 @@
       <div class="f">
         <input type="checkbox" id="seq-int" onchange="onMeta()">
         <label for="seq-int">Interruptible</label></div>
+      <div class="f" title="Device slot this sequence saves to (set when you load a slot)">
+        <label>Slot:</label>
+        <select id="seq-slot" onchange="state.slot = this.value"></select>
+        <button class="sm prim" onclick="saveToMetaSlot()">Save to device</button></div>
     </div>
 
     <!-- Steps header -->
     <div class="sh">
       <h2 id="steps-title">Steps (0)</h2>
+      <button onclick="pasteSteps(state.steps.length)" title="Paste step(s) from the clipboard at the end">Paste Step(s)</button>
       <button onclick="addDisableAllStep()" title="Add a step that turns off every display element">+ Disable-All Step</button>
       <button class="prim" onclick="addStep()">+ Add Step</button>
     </div>
@@ -729,7 +734,8 @@ const EQ_GUT   = ['OFF','ON','BLINK','CHASE','DOUBLE_CHASE'];
 const PIN_PAT  = ['OFF','CHASE','FILL_PAUSE_DRAIN_PAUSE','CHASE_3','CHASE_3_INV'];
 const SWO_PAT  = ['OFF','SWEEP','CHASE','CHASE_INV'];
 const TOP_PAT  = ['OFF','SPREAD','MARCHING_ANTS','DOUBLE_ANTS','TRIPLE_ANTS','DOUBLE_SPREAD','FILL_EMPTY','FILL_RAPID_EMPTY','FILL_RETREAT','FILL_INV_EMPTY','PONG_1X','PONG_2X','PONG_3X','PONG_INV'];
-const TRK_ANIM = ['none','stop','count_up','fill_up','count_down','filled_down','count_down_warning','random_toggle'];
+// notif_count: bar of tracks 1..N, N = notifications in the list (live; preview uses the ANCS tab's test count).
+const TRK_ANIM = ['none','stop','count_up','fill_up','count_down','filled_down','count_down_warning','random_toggle','notif_count'];
 const TRACK_NUMS = Array.from({length:20}, (_,i) => String(i+1));
 const TXT_DIR  = ['LEFT','RIGHT','BOUNCE'];
 
@@ -854,7 +860,7 @@ const ALL_KINDS = Object.keys(SCHEMAS);
 // STATE
 // ══════════════════════════════════════════════════════════════
 
-let state = { name:'My Sequence', tag:'foreground', interruptible:false, steps:[] };
+let state = { name:'My Sequence', tag:'foreground', interruptible:false, steps:[], slot:'' };
 let expanded = []; // bool per step (true = open)
 
 function mkAction(kind) {
@@ -935,6 +941,7 @@ function render() {
   document.getElementById('seq-name').value = state.name;
   document.getElementById('seq-tag').value  = state.tag;
   document.getElementById('seq-int').checked = state.interruptible;
+  renderMetaSlot();
   document.getElementById('steps-title').textContent = `Steps (${state.steps.length})`;
 
   state.steps.forEach(normStep);
@@ -973,6 +980,8 @@ function htmlStep(step, si) {
       <button class="sm" onclick="event.stopPropagation();moveStep(${si},-1)" ${si===0?'disabled':''}>↑</button>
       <button class="sm" onclick="event.stopPropagation();moveStep(${si},1)" ${si===state.steps.length-1?'disabled':''}>↓</button>
       <button class="sm" onclick="event.stopPropagation();dupStep(${si})" title="Duplicate">⧉</button>
+      <button class="sm" onclick="event.stopPropagation();copyStep(${si})" title="Copy step to clipboard">Copy</button>
+      <button class="sm" onclick="event.stopPropagation();pasteSteps(${si + 1})" title="Paste step(s) from clipboard below this one">Paste</button>
       <button class="sm dang" onclick="event.stopPropagation();delStep(${si})">×</button>
     </div>
   </div>
@@ -1347,14 +1356,21 @@ function applyEdit() {
   }
 }
 
-function loadObj(obj, name) {
+// slot: device slot this came from (shown in the header; '' = none).
+function loadObj(obj, name, slot) {
   state.name = name || state.name || 'Loaded Sequence';
   state.tag  = getAny(obj, ['tag', 't'], 'foreground');
   state.interruptible = !!getAny(obj, ['interruptible', 'i'], false);
-  state.steps = [];
-  expanded = [];
 
-  const rawSteps = getAny(obj, ['steps', 's'], []);
+  state.slot = slot || '';
+  state.steps = parseSteps(getAny(obj, ['steps', 's'], []));
+  expanded = state.steps.map(() => true);
+  render();
+}
+
+// JSON steps -> editor steps. Step-number targets point inside rawSteps,
+// unless numTarget(n) is given to resolve them some other way.
+function parseSteps(rawSteps, numTarget) {
   const ids = rawSteps.map(() => newStepId());
   // JSON target (1-based number | "next" | "end") -> internal target.
   const targetIn = (t, fallback) => {
@@ -1364,9 +1380,12 @@ function loadObj(obj, name) {
       if (NAMED_TARGETS.includes(low)) return low;
       t = parseInt(t, 10);
     }
-    return (Number.isInteger(t) && t >= 1 && t <= ids.length) ? ids[t - 1] : 'end';
+    if (!Number.isInteger(t)) return 'end';
+    if (numTarget) return numTarget(t);
+    return (t >= 1 && t <= ids.length) ? ids[t - 1] : 'end';
   };
 
+  const out = [];
   for (const [stepIdx, step] of rawSteps.entries()) {
     const hasAt  = Object.prototype.hasOwnProperty.call(step, 'atMs')      || Object.prototype.hasOwnProperty.call(step, 'a');
     const hasAft = Object.prototype.hasOwnProperty.call(step, 'afterText') || Object.prototype.hasOwnProperty.call(step, 'axt');
@@ -1422,11 +1441,11 @@ function loadObj(obj, name) {
       st.flow = 'goto';
       st.goto = targetIn(gotoRaw, 'next');
     }
-    state.steps.push(st);
-    expanded.push(true);
+    out.push(st);
   }
-  render();
+  return out;
 }
+
 
 // ══════════════════════════════════════════════════════════════
 // EVENTS — META
@@ -1496,6 +1515,42 @@ function dupStep(si) {
   state.steps.splice(si + 1, 0, copy);
   expanded.splice(si + 1, 0, true);
   render();
+}
+
+// Copy one step's JSON. Step-number jump targets are kept as numbers in
+// this sequence (pasting a single step resolves them the same way).
+async function copyStep(si) {
+  const step = buildJSON()[keyOut('steps')][si];
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(step));
+    log('inf', `Copied Step ${si + 1} to clipboard`);
+  } catch (e) { log('err', `Clipboard write failed: ${e.message}`); }
+}
+
+// Paste a step object, an array of steps, or a whole sequence ({steps:[...]})
+// so its steps go in at index `at`. A single step's step-number targets
+// point at this sequence's steps; several steps' targets point within the
+// pasted block.
+async function pasteSteps(at) {
+  let text;
+  try { text = await navigator.clipboard.readText(); }
+  catch (e) { log('err', `Clipboard read failed: ${e.message}`); return; }
+  let data;
+  try { data = JSON.parse(text); }
+  catch (e) { log('err', `Paste: clipboard isn't JSON (${e.message})`); return; }
+  let raw = Array.isArray(data) ? data : getAny(data, ['steps', 's']);
+  if (!Array.isArray(raw)) raw = (data && typeof data === 'object') ? [data] : [];
+  raw = raw.filter(st => st && typeof st === 'object' && getAny(st, ['actions', 'x', 'do', 'd']) !== undefined);
+  if (!raw.length) { log('err', 'Paste: no steps found in clipboard'); return; }
+
+  const before = state.steps.map(st => st.id);
+  const steps = parseSteps(raw, raw.length === 1
+    ? n => (n >= 1 && n <= before.length) ? before[n - 1] : 'end'
+    : undefined);
+  state.steps.splice(at, 0, ...steps);
+  expanded.splice(at, 0, ...steps.map(() => true));
+  render();
+  log('inf', `Pasted ${steps.length} step(s) at Step ${at + 1}`);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1690,7 +1745,8 @@ function renderSaved() {
 
 function newSequence() {
   if (!confirm('Start a new sequence? Unsaved changes will be lost.')) return;
-  state = { name:'New Sequence', tag:'foreground', interruptible:false, steps:[] };
+  // Mutate (not replace) so the S alias used by inline handlers stays live.
+  Object.assign(state, { name:'New Sequence', tag:'foreground', interruptible:false, steps:[], slot:'' });
   expanded = [];
   render();
 }
@@ -1973,6 +2029,7 @@ let slotListResolver = null;
 const slotDataBuf = {}; // accumulates PART lines keyed by slot number
 
 function renderSlotGrid() {
+  renderMetaSlot();
   const grid = document.getElementById('slot-grid');
   if (!grid) return;
   grid.innerHTML = '';
@@ -1996,6 +2053,37 @@ function renderSlotGrid() {
       </div>`}`;
     grid.appendChild(cell);
   }
+}
+
+// Header slot picker: — plus 1..20 with the names known from SLOT LIST.
+function renderMetaSlot() {
+  const sel = document.getElementById('seq-slot');
+  if (!sel) return;
+  const cur = String(state.slot || '');
+  // The first render runs before deviceSlots is declared further down.
+  let names = [];
+  try { names = deviceSlots.map(d => d?.name); } catch { /* not ready yet */ }
+  const opts = ['<option value="">—</option>'];
+  for (let i = 1; i <= 20; i++) {
+    const nm = names[i - 1];
+    opts.push(`<option value="${i}"${String(i) === cur ? ' selected' : ''}>${i}${nm ? ' · ' + escHtml(nm) : ''}</option>`);
+  }
+  sel.innerHTML = opts.join('');
+}
+
+// Save to the slot chosen in the header, named after the sequence.
+async function saveToMetaSlot() {
+  const slotNum = parseInt(state.slot, 10);
+  if (!(slotNum >= 1 && slotNum <= 20)) { log('err', 'Pick a slot (1-20) next to Interruptible first'); return; }
+  if (!bleOk) { log('err', 'Not connected'); return; }
+  const safeName = (state.name.trim() || `Slot${slotNum}`).replace(/[, ]/g, '_').slice(0, 32);
+  const existing = deviceSlots[slotNum - 1];
+  if (existing && existing.name !== safeName &&
+      !confirm(`Slot ${slotNum} contains "${existing.name}". Overwrite it with "${safeName}"?`)) return;
+  const json = JSON.stringify(buildJSON());
+  await sendCmd(`SLOT SAVE ${slotNum} ${safeName} ${json}`);
+  deviceSlots[slotNum - 1] = { name: safeName };
+  renderSlotGrid();
 }
 
 async function slotRefresh() {
@@ -2115,7 +2203,7 @@ async function slotLoad(slot, e) {
   try {
     const obj = JSON.parse(json);
     const name = deviceSlots[slot - 1]?.name || `Slot${slot}`;
-    loadObj(obj, name);
+    loadObj(obj, name, String(slot));
     log('inf', `Loaded slot ${slot} "${name}" into editor`);
   } catch(err) { log('err', `Slot ${slot} JSON parse error: ${err.message}`); }
 }
