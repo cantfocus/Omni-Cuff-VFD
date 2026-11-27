@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>5×7 Font Maker</title>
+<style>
+  :root{--bg:#0f1115;--panel:#151924;--ink:#e6e9ef;--muted:#9aa4b2;--accent:#7c9cff;--grid:#263047;--on:#7c9cff;--off:#1f2736}
+  *{box-sizing:border-box}html,body{height:100%}body{margin:0;font:14px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Noto Sans","Helvetica Neue",Arial,"Apple Color Emoji","Segoe UI Emoji";background:var(--bg);color:var(--ink)}
+  header{padding:16px 20px;display:flex;gap:16px;align-items:center;justify-content:space-between;background:linear-gradient(180deg,#14192a 0%,#121620 100%);border-bottom:1px solid #20263a}
+  header h1{margin:0;font-size:16px;font-weight:600;letter-spacing:.3px}
+  body{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+  main{flex:1;min-height:0;width:100%;display:grid;grid-template-columns:1fr 440px;gap:18px;padding:18px;max-width:1600px;margin:0 auto}
+  .rightcol{display:flex;flex-direction:column;gap:18px;min-height:0;overflow:auto;padding-bottom:4px}
+  .rightcol>.card{flex:0 0 auto}
+  .card{background:var(--panel);border:1px solid #20263a;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  .grid-wrap{padding:18px}
+  .grid-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px;flex-wrap:wrap}
+  .grid-head .label{opacity:.8;font-size:12px;letter-spacing:.3px}
+  .matrix{display:grid;gap:8px;justify-content:center}
+  .matrix .col{display:grid;gap:8px}
+  .cell{width:40px;height:40px;border-radius:10px;background:var(--off);display:grid;place-items:center;border:1px solid var(--grid);cursor:crosshair;transition:transform .05s ease}
+  .cell.on{background:linear-gradient(180deg,#7c9cff 0%,#5f7eea 100%);border-color:#5d72b3;box-shadow:0 2px 10px rgba(124,156,255,.35) inset,0 0 0 1px rgba(124,156,255,.2)}
+  .cell:active{transform:scale(.98)}
+  .hint{color:var(--muted);font-size:12px;margin-top:10px}
+  .side{padding:16px;display:flex;flex-direction:column;gap:14px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .row>*:not(.grow){flex:0 0 auto}.grow{flex:1 1 auto}
+  .btn{appearance:none;border:none;border-radius:10px;padding:10px 12px;background:#1d2435;color:var(--ink);font-weight:600;letter-spacing:.2px;cursor:pointer;border:1px solid #28324b}
+  .btn:hover{background:#232b41}.btn.primary{background:linear-gradient(180deg,#6f8cff 0%,#5a75f0 100%);color:white;border-color:#495fda}.btn.ghost{background:transparent;border-color:#2a334c}.btn.warn{background:linear-gradient(180deg,#f86f6f 0%,#e25555 100%);border-color:#c54b4b}
+  .stack{display:flex;flex-direction:column;gap:8px}
+  textarea{width:100%;min-height:140px;resize:vertical;background:#0f1422;color:#e9edf7;border:1px solid #243057;border-radius:10px;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+  select,input[type="number"],input[type="text"]{background:#0f1422;color:#e9edf7;border:1px solid #243057;border-radius:10px;padding:8px 10px}
+  .mini{font-size:12px;opacity:.85}
+  .badges{display:flex;gap:8px;flex-wrap:wrap}.badge{background:#0e1421;border:1px solid #243057;padding:6px 8px;border-radius:999px;font-size:11px;color:#cfd6e7}
+
+  .font-panel{padding:14px;display:flex;flex-direction:column;min-height:0}
+  .gallery-head{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  .font-grid{flex:1;min-height:0;overflow:auto;align-content:start;display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));margin-top:10px;padding:4px 6px 4px 4px}
+  .glyph.dragging{opacity:.45}
+  .glyph.drop-target{outline:2px dashed #ffcf5c;outline-offset:2px}
+  .glyph{background:#0f1422;border:1px solid #243057;border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:6px;cursor:pointer;position:relative}
+  .glyph:hover{border-color:#31406f}
+  .glyph.sel{outline:2px solid rgba(124,156,255,.65);outline-offset:2px}
+  .glyph .t{display:flex;gap:8px;align-items:baseline;justify-content:space-between}
+  .glyph .code{font-family:ui-monospace,monospace;font-size:11px;color:#8fa1c8}
+  .glyph .chr{font-size:14px;color:#e9edf7;max-width:48px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mini-canvas{width:62%;align-self:center;aspect-ratio:5/7;background:#0b1020;border-radius:8px;border:1px solid #1e2844}
+  .glyph small{font-family:ui-monospace,monospace;font-size:9px;text-align:center;color:#8fa1c8;opacity:.9}
+  @media(max-width:960px){body{height:auto;overflow:visible}main{grid-template-columns:1fr}.rightcol{order:-1;overflow:visible}.font-grid{max-height:60vh}.cell{width:34px;height:34px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>5×7 Font Maker</h1>
+  <div class="badges">
+    <div class="badge">Glyphs: ASCII 32–255</div>
+    <div class="badge">Bit order: top = bit0</div>
+    <div class="badge">Output: 5 column bytes</div>
+  </div>
+</header>
+
+<main>
+  <section class="card font-panel">
+    <div class="gallery-head">
+      <div class="mini" style="opacity:.85">Glyphs: click to edit • drag onto another tile to <b>move</b> it there (tiles between shift over) • Shift-drop = swap • Option/Alt-drop = copy</div>
+      <div class="row">
+        <span class="mini" id="undoInfo" style="opacity:.7"></span>
+        <button class="btn ghost" id="btnUndo" disabled title="Undo the last move/swap/copy/load (⌘Z / Ctrl+Z)">Undo</button>
+      </div>
+    </div>
+    <div id="fontGrid" class="font-grid"></div>
+  </section>
+
+  <div class="rightcol">
+  <section class="card grid-wrap">
+    <div class="grid-head">
+      <div class="label">Click / drag to toggle pixels • Shift+drag = erase • Alt+drag = draw</div>
+      <div class="row">
+        <button class="btn ghost" id="btnClear">Clear</button>
+        <button class="btn ghost" id="btnFill">Fill</button>
+        <button class="btn ghost" id="btnInvert">Invert</button>
+        <button class="btn ghost" id="btnShiftL">⟵</button>
+        <button class="btn ghost" id="btnShiftR">⟶</button>
+        <button class="btn ghost" id="btnShiftU">⟰</button>
+        <button class="btn ghost" id="btnShiftD">⟱</button>
+      </div>
+    </div>
+    <div id="matrix" class="matrix"></div>
+    <div class="hint">Top row is bit0, bottom row is bit6.</div>
+  </section>
+
+  <aside class="card side">
+    <div class="stack">
+      <div class="row"><label class="mini" for="cellSize">Cell size</label><input class="grow" id="cellSize" type="range" min="22" max="60" value="40"/></div>
+
+      <div class="stack" style="gap:10px">
+        <div class="row">
+          <label class="mini" for="codepoint">Code</label>
+          <input id="codepoint" type="number" min="32" max="255" value="32" style="width:92px" />
+          <button class="btn ghost" id="btnPrev">Prev</button>
+          <button class="btn ghost" id="btnNext">Next</button>
+          <span class="mini" id="codeLabel" style="opacity:.9"></span>
+        </div>
+        <div class="row">
+          <label class="mini" for="projFont">Project font</label>
+          <select id="projFont" class="grow"></select>
+          <button class="btn ghost" id="btnLoadProj">Load</button>
+          <button class="btn ghost" id="btnImportCpp">Import .cpp</button>
+        </div>
+        <div class="row">
+          <label class="mini" for="fontName">Array name</label>
+          <input class="grow" id="fontName" type="text" value="font5x7" />
+        </div>
+      </div>
+
+      <div class="row"><label class="mini" for="format">Output</label>
+        <select id="format" class="grow">
+          <option value="c_glyph">C: current glyph {0x..}</option>
+          <option value="c_font">C: full font (32–255)</option>
+          <option value="json_font">JSON: full font (32–255)</option>
+          <option value="binary">Binary (b6..b0 for each column)</option>
+        </select>
+      </div>
+
+      <div class="stack">
+        <textarea id="output" readonly></textarea>
+        <div class="row">
+          <button class="btn primary" id="btnCopy">Copy</button>
+          <button class="btn" id="btnDownloadH">Download .h/.cpp</button>
+          <button class="btn ghost" id="btnExportJSON">Export JSON</button>
+          <button class="btn ghost" id="btnImportJSON">Import JSON</button>
+          <button class="btn warn" id="btnReset">Reset all</button>
+        </div>
+        <div class="mini" style="opacity:.75">Edits auto-save in your browser (localStorage).</div>
+        <div class="mini" style="opacity:.75;line-height:1.5">
+          <b>Into the firmware:</b> Download .h/.cpp gives <code>&lt;name&gt;_ascii32_255.h</code> and
+          <code>.cpp</code>. Replace the pair in <code>src/fonts/</code>, then run
+          <code>node tools/gen-preview-fonts.js</code> so the editor preview matches, and rebuild.
+          A <i>new</i> font name also needs an <code>extern</code> line and a <code>gFontList</code> entry in
+          <code>src/main.cpp</code> (the extern order is the font index).
+        </div>
+      </div>
+    </div>
+    <div class="mini" style="opacity:.6">Tips: Prev/Next or ←/→ keys step through codes. 32 is space, 127 is DEL; 128–255 are labeled 0x80–0xFF.</div>
+  </aside>
+  </div>
+</main>
+
+<script src="preview/vfd-fonts.js"></script>
+<script>
+(function(){
+  const W=5, H=7;
+  const START=32, END=255, COUNT=(END-START+1);
+  const LSKEY='font57_ascii32_255_v1';
+
+  // ---------- State ----------
+  // font[code] = { grid: 7x5, bytes: [5] }
+  let font = {};
+  let current = START;
+
+  let grid = Array.from({length:H},()=>Array(W).fill(0)); // current glyph grid
+
+  const matrix=document.getElementById('matrix');
+  const output=document.getElementById('output');
+  const format=document.getElementById('format');
+  const size=document.getElementById('cellSize');
+  const fontGrid=document.getElementById('fontGrid');
+  const codepoint=document.getElementById('codepoint');
+  const codeLabel=document.getElementById('codeLabel');
+  const fontName=document.getElementById('fontName');
+
+  let isDown=false, paintMode=1;
+
+  // ---------- Utils ----------
+  const toHex=b=>'0x'+b.toString(16).toUpperCase().padStart(2,'0');
+  const toHexByte=b=>'0x'+(b&0xFF).toString(16).toUpperCase().padStart(2,'0');
+  const toHexCP=cp=>'0x'+cp.toString(16).toUpperCase().padStart(2,'0');
+  const toBin7=b=>b.toString(2).padStart(7,'0');
+
+  function cpChar(cp){
+    // printable-ish label
+    if(cp>=32 && cp<=126) return String.fromCharCode(cp);
+    if(cp===127) return 'DEL';
+    return toHexCP(cp);
+  }
+  function cpComment(cp){
+    if(cp===32) return " ' '";
+    if(cp>=33 && cp<=126){
+      const ch=String.fromCharCode(cp);
+      // Escape backslash and single quote for comment readability
+      const safe = ch.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      return ` '${safe}'`;
+    }
+    // Extended: show hex
+    return '';
+  }
+
+  function emptyGlyph(){
+    const g = Array.from({length:H},()=>Array(W).fill(0));
+    return { grid:g, bytes:[0,0,0,0,0] };
+  }
+
+  function computeBytesFromGrid(g){
+    const bytes=[];
+    for(let x=0;x<W;x++){
+      let v=0;
+      for(let bi=0,y=0;y<H;y++,bi++){
+        if(g[y][x]) v |= (1<<bi); // bit0 top
+      }
+      bytes.push(v & 0x7F);
+    }
+    return bytes;
+  }
+
+  function normalizeIncoming(obj){
+    // Accept multiple shapes:
+    //  1) { "32":[b0..b4], ... }  (our localStorage + JSON export)
+    //  2) { "32": {bytes:[..]} } or { "32": {grid:[[..]]} }
+    //  3) { bytes: { "32":[..] } }  (wrapped export)
+    //  4) Array indexed from START (length COUNT) with [b0..b4] entries
+    const out = {};
+    if(Array.isArray(obj)){
+      const arr = obj;
+      for(let i=0;i<COUNT;i++){
+        const cp=START+i;
+        const entry = arr[i];
+        if(Array.isArray(entry) && entry.length===5){
+          out[cp]={grid:null, bytes:entry.map(x=>x|0)};
+        }else if(entry && Array.isArray(entry.bytes) && entry.bytes.length===5){
+          out[cp]={grid:null, bytes:entry.bytes.map(x=>x|0)};
+        }else if(entry && Array.isArray(entry.grid) && entry.grid.length===H){
+          const g=entry.grid.map(r=>Array.isArray(r)? r.slice(0,W).map(x=>x?1:0) : Array(W).fill(0));
+          out[cp]={grid:g, bytes:computeBytesFromGrid(g)};
+        }
+      }
+      return out;
+    }
+    if(!obj || typeof obj!=='object') return out;
+
+    for(const k of Object.keys(obj)){
+      const cp = Number(k);
+      if(!Number.isFinite(cp) || cp<START || cp>END) continue;
+      const v = obj[k];
+
+      // Common case: cp -> [b0..b4]
+      if(Array.isArray(v) && v.length===5){
+        out[cp]={grid:null, bytes:v.map(x=>x|0)};
+        continue;
+      }
+
+      if(v && Array.isArray(v.bytes) && v.bytes.length===5){
+        out[cp]={grid:null, bytes:v.bytes.map(x=>x|0)};
+      }else if(v && Array.isArray(v.grid) && v.grid.length===H){
+        const g=v.grid.map(r=>Array.isArray(r)? r.slice(0,W).map(x=>x?1:0) : Array(W).fill(0));
+        out[cp]={grid:g, bytes:computeBytesFromGrid(g)};
+      }
+    }
+    return out;
+  }
+
+  function loadFont(){
+    try{
+      const raw = localStorage.getItem(LSKEY);
+      if(!raw) return {};
+      const obj = JSON.parse(raw);
+      return normalizeIncoming(obj);
+    }catch(_){ return {}; }
+  }
+  function saveFont(){
+    // store as a compact object: { "32":[b0..b4], "33":[...], ... }
+    const o={};
+    for(let cp=START;cp<=END;cp++){
+      const entry = font[cp];
+      if(entry && Array.isArray(entry.bytes) && entry.bytes.length===5){
+        o[String(cp)] = entry.bytes.map(x=>x|0);
+      }else{
+        o[String(cp)] = [0,0,0,0,0];
+      }
+    }
+    localStorage.setItem(LSKEY, JSON.stringify(o));
+  }
+
+  function ensureAll(){
+    for(let cp=START;cp<=END;cp++){
+      if(!font[cp]) font[cp] = emptyGlyph();
+      // If only bytes exist, keep bytes; grid will be derived on demand.
+      if(font[cp].grid && (!font[cp].bytes || font[cp].bytes.length!==5)){
+        font[cp].bytes = computeBytesFromGrid(font[cp].grid);
+      }
+      if(!font[cp].bytes) font[cp].bytes=[0,0,0,0,0];
+    }
+  }
+
+  // ---------- Build grid ----------
+  function buildEditor(){
+    matrix.innerHTML='';
+    matrix.style.gridTemplateColumns=`repeat(${W},auto)`;
+    for(let x=0;x<W;x++){
+      const col=document.createElement('div');col.className='col';
+      for(let y=0;y<H;y++){
+        const c=document.createElement('div');
+        c.className='cell';
+        c.dataset.x=x; c.dataset.y=y;
+        col.appendChild(c);
+      }
+      matrix.appendChild(col);
+    }
+    refreshEditor();
+  }
+
+  function refreshEditor(){
+    matrix.querySelectorAll('.cell').forEach(c=>{
+      const x=+c.dataset.x,y=+c.dataset.y;
+      c.classList.toggle('on',grid[y][x]===1);
+    });
+    updateCurrentGlyphBytes();
+    renderOutput();
+  }
+
+  function setCell(x,y,v){
+    if(x<0||x>=W||y<0||y>=H) return;
+    grid[y][x]=v?1:0;
+  }
+
+  // paint
+  matrix.addEventListener('mousedown',e=>{
+    const t=e.target.closest('.cell'); if(!t) return;
+    isDown=true;
+    paintMode=(e.altKey?1:e.shiftKey?0:(grid[+t.dataset.y][+t.dataset.x]^1));
+    setCell(+t.dataset.x,+t.dataset.y,paintMode);
+    refreshEditor();
+  });
+  document.addEventListener('mouseup',()=>isDown=false);
+  matrix.addEventListener('mousemove',e=>{
+    if(!isDown) return;
+    const t=e.target.closest('.cell'); if(!t) return;
+    setCell(+t.dataset.x,+t.dataset.y,paintMode);
+    refreshEditor();
+  });
+
+  // buttons
+  ['btnClear','btnFill','btnInvert','btnShiftL','btnShiftR','btnShiftU','btnShiftD'].forEach(id=>{
+    const b=document.getElementById(id); if(!b) return;
+    b.onclick=()=>{
+      switch(id){
+        case'btnClear': grid=grid.map(r=>r.map(()=>0)); break;
+        case'btnFill': grid=grid.map(r=>r.map(()=>1)); break;
+        case'btnInvert': grid=grid.map(r=>r.map(v=>v?0:1)); break;
+        case'btnShiftL': for(let y=0;y<H;y++){ grid[y].push(grid[y].shift()); } break;
+        case'btnShiftR': for(let y=0;y<H;y++){ grid[y].unshift(grid[y].pop()); } break;
+        case'btnShiftU': grid.push(grid.shift()); break;
+        case'btnShiftD': grid.unshift(grid.pop()); break;
+      }
+      refreshEditor();
+    };
+  });
+
+  // resize
+  size.addEventListener('input',()=>{
+    const s=+size.value;
+    document.querySelectorAll('.cell').forEach(c=>{c.style.width=s+'px';c.style.height=s+'px';});
+  });
+
+  // ---------- Font tile grid ----------
+  function gridToCanvasBytes(bytes){
+    const px=10,pad=4;
+    const c=document.createElement('canvas');
+    c.width=W*px+pad*2; c.height=H*px+pad*2;
+    const ctx=c.getContext('2d');
+    ctx.fillStyle='#0b1020'; ctx.fillRect(0,0,c.width,c.height);
+    for(let y=0;y<H;y++){
+      for(let x=0;x<W;x++){
+        const on = (bytes[x]>>y)&1;
+        ctx.fillStyle=on?'#7c9cff':'#1f2736';
+        ctx.fillRect(pad+x*px,pad+y*px,px-1,px-1);
+      }
+    }
+    return c;
+  }
+
+  function renderFontGrid(){
+    const keepScroll = fontGrid.scrollTop;
+    fontGrid.innerHTML='';
+    for(let cp=START;cp<=END;cp++){
+      const card=document.createElement('div');
+      card.className='glyph';
+      card.dataset.cp=String(cp);
+
+      const top=document.createElement('div'); top.className='t';
+      const chr=document.createElement('div'); chr.className='chr'; chr.textContent=cpChar(cp);
+      const code=document.createElement('div'); code.className='code'; code.textContent=String(cp);
+      top.appendChild(chr); top.appendChild(code);
+
+      const bytes = (font[cp] && font[cp].bytes) ? font[cp].bytes : [0,0,0,0,0];
+      const can=gridToCanvasBytes(bytes);
+      can.className='mini-canvas';
+
+      const meta=document.createElement('small');
+      meta.textContent=bytes.map(toHexByte).join(' ');
+
+      card.appendChild(top);
+      card.appendChild(can);
+      card.appendChild(meta);
+
+      card.onclick=()=>selectCodepoint(cp);
+      card.draggable=true;
+      card.title='Drag to move • Shift-drop swap • Option-drop copy';
+
+      fontGrid.appendChild(card);
+    }
+    fontGrid.scrollTop = keepScroll;
+    highlightSelected();
+  }
+
+  function highlightSelected(){
+    fontGrid.querySelectorAll('.glyph').forEach(el=>{
+      el.classList.toggle('sel', Number(el.dataset.cp)===current);
+    });
+  }
+
+  function updateTile(cp){
+    const el = fontGrid.querySelector(`.glyph[data-cp="${cp}"]`);
+    if(!el) return;
+    const bytes = font[cp].bytes || [0,0,0,0,0];
+    const can = el.querySelector('canvas');
+    const meta = el.querySelector('small');
+    if(meta) meta.textContent = bytes.map(toHexByte).join(' ');
+
+    if(can){
+      const ctx=can.getContext('2d');
+      const px=10,pad=4;
+      ctx.fillStyle='#0b1020'; ctx.fillRect(0,0,can.width,can.height);
+      for(let y=0;y<H;y++){
+        for(let x=0;x<W;x++){
+          const on = (bytes[x]>>y)&1;
+          ctx.fillStyle=on?'#7c9cff':'#1f2736';
+          ctx.fillRect(pad+x*px,pad+y*px,px-1,px-1);
+        }
+      }
+    }
+  }
+
+  // ---------- Selection & sync ----------
+  function bytesToGrid(bytes){
+    const g = Array.from({length:H},()=>Array(W).fill(0));
+    for(let x=0;x<W;x++){
+      const b=bytes[x]||0;
+      for(let y=0;y<H;y++){
+        g[y][x] = ((b>>y)&1) ? 1 : 0;
+      }
+    }
+    return g;
+  }
+
+  function selectCodepoint(cp){
+    cp = Math.max(START, Math.min(END, cp|0));
+    current = cp;
+    codepoint.value = String(cp);
+    codeLabel.textContent = `(${toHexCP(cp)})  ${cpChar(cp)}`;
+    highlightSelected();
+
+    // load glyph into editor
+    const entry = font[cp] || emptyGlyph();
+    if(entry.grid){
+      grid = entry.grid.map(r=>r.slice());
+    }else{
+      grid = bytesToGrid(entry.bytes || [0,0,0,0,0]);
+    }
+    refreshEditor();
+    // scroll tile into view (nicely)
+    const el = fontGrid.querySelector(`.glyph[data-cp="${cp}"]`);
+    if(el){
+      const r=el.getBoundingClientRect(), c=fontGrid.getBoundingClientRect();
+      if(r.top < c.top) fontGrid.scrollTop += r.top - c.top - 6;
+      else if(r.bottom > c.bottom) fontGrid.scrollTop += r.bottom - c.bottom + 6;
+    }
+  }
+
+  function updateCurrentGlyphBytes(){
+    if(!font[current]) font[current]=emptyGlyph();
+    font[current].grid = grid.map(r=>r.slice());
+    font[current].bytes = computeBytesFromGrid(font[current].grid);
+    saveFont();
+    updateTile(current);
+  }
+
+  // codepoint input and prev/next
+  codepoint.addEventListener('change',()=>selectCodepoint(Number(codepoint.value)));
+  document.getElementById('btnPrev').onclick=()=>selectCodepoint(current-1);
+  document.getElementById('btnNext').onclick=()=>selectCodepoint(current+1);
+
+  // ---------- Output ----------
+  function renderOutput(){
+    const bytes = (font[current] && font[current].bytes) ? font[current].bytes : [0,0,0,0,0];
+    const arrName = (fontName.value||'font5x7').trim() || 'font5x7';
+
+    let text='';
+    switch(format.value){
+      case 'c_glyph':{
+        const cp=current;
+        text = `// ASCII ${cp}${cpComment(cp)}\n{ ${bytes.map(toHexByte).join(', ')} }`;
+        break;
+      }
+      case 'c_font':{
+        // Emit a compact 2D array, indexed by (code - 32)
+        let out = `static const uint8_t ${arrName}[${COUNT}][5] = {\n`;
+        for(let cp=START;cp<=END;cp++){
+          const b = (font[cp] && font[cp].bytes) ? font[cp].bytes : [0,0,0,0,0];
+          out += `  // ASCII ${cp}${cpComment(cp)}\n`;
+          out += `  { ${b.map(toHexByte).join(', ')} },\n\n`;
+        }
+        out += `};\n`;
+        text = out;
+        break;
+      }
+      case 'json_font':{
+        const o = {};
+        for(let cp=START;cp<=END;cp++){
+          const b = (font[cp] && font[cp].bytes) ? font[cp].bytes : [0,0,0,0,0];
+          o[String(cp)] = b.map(x=>x|0);
+        }
+        text = JSON.stringify({range:[START,END], bytes:o}, null, 2);
+        break;
+      }
+      case 'binary':{
+        text = bytes.map(b=>toBin7(b)).join('  ');
+        break;
+      }
+    }
+    output.value = text;
+  }
+  format.addEventListener('change',renderOutput);
+  fontName.addEventListener('input',renderOutput);
+
+  // Copy
+  document.getElementById('btnCopy').onclick=async()=>{
+    try{ await navigator.clipboard.writeText(output.value); toast('Copied'); }
+    catch(e){ alert('Copy failed: '+e); }
+  };
+
+  // Download .h/.cpp
+  function buildFiles(arrName){
+
+    // Build C/C++ array initializer (no 'static' so it can live in a .cpp)
+    function buildFontDefinition(name){
+      let out = `const uint8_t ${name}[${COUNT}][5] = {
+`;
+      for(let cp=START; cp<=END; cp++){
+        const b = (font[cp] && font[cp].bytes) ? font[cp].bytes : [0,0,0,0,0];
+        out += `  // ASCII ${cp}${cpComment(cp)}
+`;
+        out += `  { ${b.map(toHexByte).join(', ')} },
+
+`;
+      }
+      out += `};
+`;
+      return out;
+    }
+
+    
+    // Build a big ASCII preview comment block (8 glyphs per line)
+    function buildAsciiPreviewComment(){
+      function isPrintable(cp){
+        return (cp >= 32 && cp !== 127); // allow extended; DEL blanked
+      }
+      function labelFor(cp){
+        if(cp === 127) return ' '; // DEL
+        // For control chars <32, keep blank
+        if(cp < 32) return ' ';
+        // Use the actual character; if it renders oddly that's okay for extended set
+        return String.fromCharCode(cp);
+      }
+      function glyphBytes(cp){
+        const b = (font[cp] && Array.isArray(font[cp].bytes)) ? font[cp].bytes : [0,0,0,0,0];
+        return b;
+      }
+      function renderRow(bytes, row){
+        // bytes are column-major; bit0=row0 ... bit6=row6
+        let s = '';
+        for(let c=0;c<5;c++){
+          s += ((bytes[c] >> row) & 1) ? '#' : ' ';
+        }
+        return s;
+      }
+
+      let out = "/*\n";
+      for(let base=START; base<=END; base+=8){
+        // header
+        let header = "";
+        for(let i=0;i<8;i++){
+          const cp = base + i;
+          if(cp > END) break;
+          const ch = labelFor(cp);
+          const hx = cp.toString(16).toUpperCase().padStart(2,'0');
+          header += `|${ch} x${hx} ${cp}|`;
+        }
+        out += header + "\n";
+
+        // 7 rows, from row6 down to row0
+        for(let r=6;r>=0;r--){
+          let line = "";
+          for(let i=0;i<8;i++){
+            const cp = base + i;
+            if(cp > END) break;
+            const bytes = glyphBytes(cp);
+            line += `| |${renderRow(bytes, r)}| |`;
+          }
+          out += line + "\n";
+        }
+        out += "\n";
+      }
+      out += "*/\n";
+      return out;
+    }
+
+function makeGuard(name){
+      return name.toUpperCase()
+                 .replace(/[^A-Z0-9]+/g,'_')
+                 .replace(/^_+|_+$/g,'') + '_ASCII32_255_H';
+    }
+
+    const guard = makeGuard(arrName);
+
+    const hText =
+`// Auto-generated by 5×7 Font Maker
+#ifndef ${guard}
+#define ${guard}
+
+#include <stdint.h>
+
+#define FONT_FIRST_CODE 32
+#define FONT_LAST_CODE  255
+#define FONT_GLYPH_COUNT (${COUNT})
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// Indexed by (codepoint - FONT_FIRST_CODE). Range: 32..255
+extern const uint8_t ${arrName}[${COUNT}][5];
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
+
+#endif // ${guard}
+`;
+
+    const cppText =
+`// Auto-generated by 5×7 Font Maker
+#include "${arrName}_ascii32_255.h"
+
+${buildFontDefinition(arrName)}
+`;
+
+    return { h: hText + "\n" + buildAsciiPreviewComment(), cpp: cppText };
+  }
+
+  function saveText(filename, content){
+    const blob = new Blob([content], {type:'text/plain'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  }
+
+  document.getElementById('btnDownloadH').onclick=()=>{
+    const arrName = fontName.value.trim();
+    // The name becomes a C identifier and the file names main.cpp expects.
+    if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(arrName)){
+      alert('Array name must be a C identifier (letters, digits, _), e.g. neofont');
+      return;
+    }
+    const files = buildFiles(arrName);
+    saveText(arrName + '_ascii32_255.h', files.h);
+    // Second download a moment later so the browser doesn't drop it.
+    setTimeout(()=>saveText(arrName + '_ascii32_255.cpp', files.cpp), 300);
+    toast('Downloaded ' + arrName + '_ascii32_255.h/.cpp');
+  };
+
+  // Export JSON
+  document.getElementById('btnExportJSON').onclick=()=>{
+    const o = {};
+    for(let cp=START;cp<=END;cp++){
+      const b = (font[cp] && font[cp].bytes) ? font[cp].bytes : [0,0,0,0,0];
+      o[String(cp)] = b.map(x=>x|0);
+    }
+    const now = new Date();
+    const name = (fontName.value||'font5x7').trim();
+    const blob = new Blob([JSON.stringify({name, exportedAt: now.toISOString(), range:[START,END], bytes:o}, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name}_ascii32_255-${now.toISOString().replace(/[:.]/g,'-')}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Exported JSON');
+  };
+
+  // Import JSON
+  document.getElementById('btnImportJSON').onclick=()=>{
+    const i=document.createElement('input');
+    i.type='file'; i.accept='application/json';
+    i.onchange=()=>{
+      const f=i.files[0]; if(!f) return;
+      const r=new FileReader();
+      r.onload=()=>{
+        try{
+          const parsed = JSON.parse(r.result);
+          let incoming = parsed;
+          if(parsed && parsed.bytes) incoming = parsed.bytes;
+          const normalized = normalizeIncoming(incoming);
+          pushUndo('import JSON');
+          for(const k of Object.keys(normalized)){
+            const cp=Number(k);
+            if(!font[cp]) font[cp]=emptyGlyph();
+            font[cp].bytes = normalized[cp].bytes.slice(0,5).map(x=>x|0);
+            font[cp].grid = bytesToGrid(font[cp].bytes);
+            updateTile(cp);
+          }
+          saveFont();
+          selectCodepoint(current);
+          toast('Imported JSON');
+        }catch(e){ alert('Import failed: '+e.message); }
+      };
+      r.readAsText(f);
+    };
+    i.click();
+  };
+
+  // Reset all
+  document.getElementById('btnReset').onclick=()=>{
+    if(!confirm('Reset ALL glyphs (32–255) to blank?')) return;
+    pushUndo('reset');
+    localStorage.removeItem(LSKEY);
+    font = {};
+    ensureAll();
+    renderFontGrid();
+    selectCodepoint(START);
+    toast('Reset complete');
+  };
+
+  function toast(msg){
+    const t=document.createElement('div');
+    t.textContent=msg;
+    Object.assign(t.style,{position:'fixed',bottom:'18px',left:'50%',transform:'translateX(-50%)',
+      background:'#1d2435',border:'1px solid #2a334c',padding:'10px 14px',borderRadius:'10px',
+      color:'#e6e9ef',boxShadow:'0 10px 25px rgba(0,0,0,.35)'});
+    document.body.appendChild(t);
+    setTimeout(()=>t.remove(),1100);
+  }
+
+  // ---------- Project fonts ----------
+  // Replace every glyph with a flat [b0..b4, b0..b4, ...] array (224*5 bytes).
+  function setAllBytes(flat, name){
+    pushUndo('load ' + (name||'font'));
+    for(let i=0;i<COUNT;i++){
+      const b = Array.from(flat.slice(i*5, i*5+5), x=>(x|0)&0x7F);
+      while(b.length<5) b.push(0);
+      font[START+i] = { grid: bytesToGrid(b), bytes: b };
+    }
+    if(name){ fontName.value = name; saveName(); }
+    saveFont();
+    renderFontGrid();
+    selectCodepoint(current);
+  }
+
+  // Same parse as tools/gen-preview-fonts.js: every {...} after the '='.
+  function parseCpp(text){
+    const src = text.replace(/\/\/[^\n]*/g,'').replace(/\/\*[\s\S]*?\*\//g,'');
+    const nameM = src.match(/uint8_t\s+([A-Za-z_]\w*)\s*\[/);
+    const body = src.slice(src.indexOf('=')+1);
+    const glyphs = [...body.matchAll(/\{([^{}]*)\}/g)].map(m =>
+      m[1].split(',').map(x=>x.trim()).filter(Boolean).map(Number));
+    if(glyphs.length!==COUNT || glyphs.some(g=>g.length!==5 || g.some(Number.isNaN)))
+      throw new Error(`expected ${COUNT} glyphs of 5 bytes, found ${glyphs.length}`);
+    return { name: nameM ? nameM[1] : null, bytes: glyphs.flat() };
+  }
+
+  const projFont = document.getElementById('projFont');
+  const PROJ = (window.VFDSim && VFDSim.FONT_DATA) || [];
+  const PROJ_NAMES = (window.VFDSim && VFDSim.FONT_NAMES) || [];
+  PROJ.forEach((_,i)=>{
+    const o=document.createElement('option');
+    o.value=String(i); o.textContent=`${i}: ${PROJ_NAMES[i]||('font '+i)}`;
+    projFont.appendChild(o);
+  });
+  if(!PROJ.length){
+    projFont.innerHTML='<option>(preview/vfd-fonts.js not found)</option>';
+    projFont.disabled=true; document.getElementById('btnLoadProj').disabled=true;
+  }
+  document.getElementById('btnLoadProj').onclick=()=>{
+    const i=Number(projFont.value), name=PROJ_NAMES[i]||'';
+    if(!confirm(`Replace all glyphs with the project font "${name}"? Unsaved edits are lost.`)) return;
+    setAllBytes(PROJ[i], name);
+    toast('Loaded ' + name);
+  };
+  document.getElementById('btnImportCpp').onclick=()=>{
+    const inp=document.createElement('input');
+    inp.type='file'; inp.accept='.cpp,.c,.cc,.h,text/plain';
+    inp.onchange=()=>{
+      const f=inp.files[0]; if(!f) return;
+      f.text().then(t=>{
+        try{
+          const r=parseCpp(t);
+          setAllBytes(r.bytes, r.name);
+          toast('Imported ' + (r.name||f.name));
+        }catch(e){ alert('Import failed: '+e.message+'\n(Pick the .cpp — the .h has no glyph data.)'); }
+      });
+    };
+    inp.click();
+  };
+
+  const NAMEKEY = LSKEY + '_name';
+  function saveName(){ try{ localStorage.setItem(NAMEKEY, fontName.value); }catch(_){} }
+  fontName.addEventListener('input', saveName);
+  try{ const n=localStorage.getItem(NAMEKEY); if(n) fontName.value=n; }catch(_){}
+
+  window.FontMaker = { buildFiles, parseCpp, setAllBytes, rearrange: (s,d,o)=>rearrange(s,d,o), undo: ()=>undo() };
+
+  // ---------- Rearrange (drag & drop) ----------
+  // Snapshots of every glyph's bytes before a bulk change. Pixel edits aren't
+  // tracked: they'd flood the stack, and Clear/Invert are one click to redo.
+  const undoStack=[];
+  const btnUndo=document.getElementById('btnUndo');
+  const undoInfo=document.getElementById('undoInfo');
+  function pushUndo(label){
+    const snap={};
+    for(let cp=START;cp<=END;cp++) snap[cp]=(font[cp]&&font[cp].bytes||[0,0,0,0,0]).slice();
+    undoStack.push({label, snap, current});
+    if(undoStack.length>40) undoStack.shift();
+    refreshUndo();
+  }
+  function refreshUndo(){
+    btnUndo.disabled=!undoStack.length;
+    undoInfo.textContent=undoStack.length ? 'last: '+undoStack[undoStack.length-1].label : '';
+  }
+  function undo(){
+    const u=undoStack.pop(); if(!u) return;
+    for(let cp=START;cp<=END;cp++) font[cp]={grid:bytesToGrid(u.snap[cp]), bytes:u.snap[cp]};
+    saveFont();
+    renderFontGrid();
+    selectCodepoint(u.current);
+    refreshUndo();
+    toast('Undid '+u.label);
+  }
+  btnUndo.onclick=undo;
+
+  function cloneGlyph(g){ return {grid:bytesToGrid(g.bytes), bytes:g.bytes.slice()}; }
+
+  // move: dragged glyph lands on dst, the ones between shift one place toward src.
+  function rearrange(src, dst, op){
+    if(src===dst) return;
+    const label=`${op} ${src}→${dst}`;
+    pushUndo(label);
+    if(op==='copy'){
+      font[dst]=cloneGlyph(font[src]);
+    }else if(op==='swap'){
+      const t=font[src]; font[src]=font[dst]; font[dst]=t;
+    }else{
+      const moving=font[src];
+      if(src<dst){ for(let i=src;i<dst;i++) font[i]=font[i+1]; }
+      else       { for(let i=src;i>dst;i--) font[i]=font[i-1]; }
+      font[dst]=moving;
+    }
+    saveFont();
+    renderFontGrid();
+    selectCodepoint(dst);
+    toast(label);
+  }
+
+  let dragSrc=null;
+  const tileOf=e=>e.target.closest && e.target.closest('.glyph');
+  function clearDropTarget(){ fontGrid.querySelectorAll('.drop-target').forEach(x=>x.classList.remove('drop-target')); }
+  fontGrid.addEventListener('dragstart',e=>{
+    const t=tileOf(e); if(!t) return;
+    dragSrc=Number(t.dataset.cp);
+    e.dataTransfer.effectAllowed='copyMove';
+    e.dataTransfer.setData('text/plain', String(dragSrc));
+    t.classList.add('dragging');
+  });
+  fontGrid.addEventListener('dragover',e=>{
+    const t=tileOf(e); if(!t || dragSrc===null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect=e.altKey?'copy':'move';
+    if(!t.classList.contains('drop-target')){ clearDropTarget(); t.classList.add('drop-target'); }
+  });
+  fontGrid.addEventListener('drop',e=>{
+    const t=tileOf(e); if(!t || dragSrc===null) return;
+    e.preventDefault();
+    const src=dragSrc, dst=Number(t.dataset.cp);
+    dragSrc=null; clearDropTarget();
+    rearrange(src, dst, e.altKey?'copy':e.shiftKey?'swap':'move');
+  });
+  fontGrid.addEventListener('dragend',()=>{
+    dragSrc=null; clearDropTarget();
+    fontGrid.querySelectorAll('.dragging').forEach(x=>x.classList.remove('dragging'));
+  });
+
+  document.addEventListener('keydown',e=>{
+    const tag=(e.target.tagName||'').toLowerCase();
+    if(tag==='input'||tag==='textarea'||tag==='select') return;
+    if((e.metaKey||e.ctrlKey) && !e.shiftKey && e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); }
+    else if(e.key==='ArrowRight'){ e.preventDefault(); selectCodepoint(current+1); }
+    else if(e.key==='ArrowLeft'){ e.preventDefault(); selectCodepoint(current-1); }
+  });
+
+  // ---------- Init ----------
+  font = loadFont();
+  ensureAll();
+  buildEditor();
+  renderFontGrid();
+  selectCodepoint(START);
+  renderOutput();
+})();
+</script>
+</body>
+</html>
