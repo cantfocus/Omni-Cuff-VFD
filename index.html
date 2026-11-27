@@ -539,20 +539,23 @@
         <h4>Meshtastic</h4>
         <p>Meshtastic messages arrive as normal iOS notifications from the Meshtastic app, so the app must be allowed
            to send notifications and be connected to your node. The cuff matches the app ID
-           <code>gvh.MeshtasticClient</code>. If a mesh message shows up as <code>kind=other</code> in the console,
+           <code>gvh.MeshtasticClient</code>. Notifications from any other app are ignored (not stored or shown) but logged to the console as
+           <code>ANCS other (ignored) … app=…</code>. If a mesh message shows up that way,
            note the <code>app=</code> value and update <code>kMeshtasticAppId</code> in <code>src/PhoneLink.h</code>.</p>
 
         <h4>On the cuff</h4>
         <ul>
           <li><b>DOWN</b> (short): open the notification list on the newest one and play its <b>title card</b>.</li>
-          <li>In the list: <b>DOWN</b> older, <b>UP</b> newer (wraps around). <b>SELECT</b> replays the
-              <b>incoming</b> animation, <b>RIGHT</b> plays the <b>replay</b> animation, <b>LEFT</b> goes back to idle.
-              No buttons for the TimeOut setting also goes back to idle. <code>other</code> apps aren't listed.</li>
+          <li>In the list: <b>DOWN</b> older, <b>UP</b> newer. Scrolling past either end (UP on the newest, DOWN on the oldest) goes back to idle. <b>SELECT</b> replays the
+              <b>incoming</b> animation, <b>RIGHT</b> plays the <b>replay</b> animation.
+              <b>LEFT</b> asks to dismiss it (<code>DISMISS</code> / <code>←YES/NO→</code>): LEFT again removes it from the
+              cuff's list and shows the next one; any other button keeps it. No buttons for the TimeOut setting goes back to idle.</li>
           <li><b>DOWN</b> (hold 1 s): display power on/off.</li>
           <li>Outside the list, any button dismisses a notification on the display. It doesn't answer or decline calls.</li>
           <li>The rolling clock is part of the <b>idle</b> animation, which you can edit from the Sequences tab
               (<i>Send to Device → Idle</i>).</li>
-          <li>Notification history is kept in RAM only. It is never written to flash and is cleared on reboot.</li>
+          <li>The list keeps the last 20 notifications in RAM only. It is never written to flash and is cleared on reboot.
+              Dismissing on the cuff doesn't clear it on the phone.</li>
         </ul>
 
         <h4>Troubleshooting</h4>
@@ -587,7 +590,7 @@
           <b>Incoming</b> plays when the notification arrives (and on SELECT in the list), the <b>Title card</b> plays
           when you scroll to it in the list, and <b>Replay</b> plays on RIGHT. <b>Edit</b> opens one in the Sequences tab;
           <b>Save to device</b> there replaces it. <b>Revert</b> deletes the saved copy and goes back to the built-in
-          default. <code>other</code> isn't listed, so it only has an incoming animation, and none by default.</p>
+          default. Other apps are ignored, so they have no animations.</p>
       </div>
     </div>
   </div>
@@ -659,7 +662,7 @@
           <tr><td><code>{title}</code></td><td>Sender, contact or caller name</td></tr>
           <tr><td><code>{message}</code></td><td>Message body (up to 200 chars)</td></tr>
           <tr><td><code>{app}</code></td><td>App bundle ID, e.g. <code>com.apple.MobileSMS</code></td></tr>
-          <tr><td><code>{kind}</code></td><td>call, missed, sms, mesh or other</td></tr>
+          <tr><td><code>{kind}</code></td><td>call, missed, sms or mesh</td></tr>
           <tr><td><code>{time}</code></td><td>HH:MM the notification arrived</td></tr>
           <tr><td><code>{now}</code></td><td>Current HH:MM</td></tr>
           <tr><td><code>{pos}</code></td><td>Position in the notification list (1 = newest)</td></tr>
@@ -2248,7 +2251,6 @@ const ANCS_KINDS = [
   { kind: 'missed', desc: 'Missed call' },
   { kind: 'sms',    desc: 'Messages app (SMS / iMessage)' },
   { kind: 'mesh',   desc: 'Meshtastic app' },
-  { kind: 'other',  desc: 'Any other app (not in the list; no alert unless you save one)' },
 ];
 
 // Animation roles per kind. ID on the device: "sms" (incoming), "sms.title", "sms.replay".
