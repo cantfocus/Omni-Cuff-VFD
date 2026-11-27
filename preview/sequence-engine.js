@@ -402,7 +402,7 @@
   const kMaxSteps = 96;
 
   // Flow control (port of SequenceEngine wait/goto).
-  const kTargetNext = -1, kTargetEnd = -2, kTargetNone = -3;
+  const kTargetNext = -1, kTargetEnd = -2, kTargetNone = -3, kTargetLast = -4;
   const INPUTS = ['up', 'down', 'left', 'right', 'select'];
   const kTimeoutSlot = INPUTS.length;
   const kDefaultWaitTimeoutMs = 30000;
@@ -551,6 +551,7 @@
       this.sequenceStartMs_ = NS.millis();
       this.nextStepIndex_ = 0;
       this.waiting_ = false;
+      this.inputStep_ = -1;
       this.endReason_ = EndReason.NONE;
       this.running_ = true;
       return true;
@@ -600,6 +601,8 @@
           return;
         }
         ++this.nextStepIndex_;
+        // This step's input targets stay live until the next step runs or a jump.
+        this.inputStep_ = this.stepHasInput_[idx] ? idx : -1;
         if (this.onStep) this.onStep(idx); // preview hook: which step just ran
 
         if (this.stepHasWait_[idx]) {
@@ -626,11 +629,13 @@
       this.lastSequenceCompletedMs_ = now;
       this.running_ = false;
       this.waiting_ = false;
+      this.inputStep_ = -1;
       this.endReason_ = reason;
     }
 
     resolveTarget_(target, owner) {
       if (target === kTargetNext) return (owner + 1 < this.stepCount_) ? owner + 1 : kTargetEnd;
+      if (target === kTargetLast) return this.stepCount_ ? this.stepCount_ - 1 : kTargetEnd;
       return target;
     }
 
@@ -648,26 +653,41 @@
       else this.stepAtMs_[k] = (now - this.sequenceStartMs_) >>> 0;
       this.nextStepIndex_ = k;
       this.waiting_ = false;
+      this.inputStep_ = -1;
+    }
+
+    // Button targets in effect now: the active wait's, else the current
+    // step's non-blocking input targets, else null.
+    activeTargets_() {
+      if (!this.running_) return null;
+      if (this.waiting_) return this.stepWait_[this.waitStep_];
+      if (this.inputStep_ >= 0) return this.stepInput_[this.inputStep_];
+      return null;
     }
 
     // input: 'up' | 'down' | 'left' | 'right' | 'select'. Returns true if the
-    // active wait handles it (and jumped).
+    // sequence (active wait or step input) handles it (and jumped).
     handleInput(input) {
       const slot = INPUTS.indexOf(String(input).toLowerCase());
-      if (!this.running_ || !this.waiting_ || slot < 0) return false;
-      const target = this.stepWait_[this.waitStep_][slot];
+      const targets = this.activeTargets_();
+      if (!targets || slot < 0) return false;
+      const target = targets[slot];
       if (target === kTargetNone) return false;
+      const owner = this.waiting_ ? this.waitStep_ : this.inputStep_;
       this.waiting_ = false;
-      this.jumpTo_(target, this.waitStep_, NS.millis(), true);
+      this.jumpTo_(target, owner, NS.millis(), true);
       return true;
     }
 
     isWaitingForInput() { return this.running_ && this.waiting_; }
-    // Names of the buttons the active wait handles.
+    // Names of the buttons the sequence handles right now (wait or step input).
     waitInputs() {
-      if (!this.isWaitingForInput()) return [];
-      return INPUTS.filter((_, i) => this.stepWait_[this.waitStep_][i] !== kTargetNone);
+      const t = this.activeTargets_();
+      if (!t) return [];
+      return INPUTS.filter((_, i) => t[i] !== kTargetNone);
     }
+    // Step whose non-blocking input targets are live (-1 if none / waiting).
+    inputStepIndex() { return (this.running_ && !this.waiting_) ? this.inputStep_ : -1; }
     waitRemainingMs(now) {
       if (!this.isWaitingForInput()) return 0;
       const el = (now - this.waitStartMs_) >>> 0;
@@ -704,6 +724,7 @@
       }
       this.running_ = false;
       this.waiting_ = false;
+      this.inputStep_ = -1;
       this.stepCount_ = 0;
       this.nextStepIndex_ = 0;
       this.interruptible_ = false;
@@ -776,6 +797,8 @@
       this.stepHasWait_ = new Array(kMaxSteps).fill(false);
       this.stepWait_ = Array.from({ length: kMaxSteps }, () => new Array(kTimeoutSlot + 1).fill(kTargetNone));
       this.stepWaitTimeoutMs_ = new Array(kMaxSteps).fill(kDefaultWaitTimeoutMs);
+      this.stepHasInput_ = new Array(kMaxSteps).fill(false);
+      this.stepInput_ = Array.from({ length: kMaxSteps }, () => new Array(INPUTS.length).fill(kTargetNone));
       let cursorMs = 0;
       let afterTextMode = false;
       let afterTextCursor = 0;
@@ -847,13 +870,14 @@
       return true;
     }
 
-    // Target: 1-based step number, "next" or "end". Returns null if invalid.
+    // Target: 1-based step number, "next", "last" or "end". Returns null if invalid.
     parseTarget_(v, total) {
       let n = -1;
       if (typeof v === 'number' && Number.isInteger(v)) n = v;
       else if (typeof v === 'string') {
         if (equalsIgnoreCase(v, 'next')) return kTargetNext;
         if (equalsIgnoreCase(v, 'end')) return kTargetEnd;
+        if (equalsIgnoreCase(v, 'last')) return kTargetLast;
         if (/^-?\d+$/.test(v)) n = parseInt(v, 10);
       }
       if (n < 1 || n > total) return null;
@@ -881,6 +905,19 @@
           this.stepWait_[index][kTimeoutSlot] = r;
         }
         return true;
+      }
+      // Non-blocking input: the timeline keeps running; a listed button jumps.
+      const inputNode = getField(step, 'input', 'ip');
+      if (!isNull(inputNode)) {
+        if (!isObj(inputNode)) { this.lastError_ = `step ${index + 1}: input must be an object`; return false; }
+        this.stepHasInput_[index] = true;
+        for (let b = 0; b < INPUTS.length; ++b) {
+          const t = member(inputNode, INPUTS[b]);
+          if (isNull(t)) continue;
+          const r = this.parseTarget_(t, total);
+          if (r === null) { this.lastError_ = `step ${index + 1}: bad input.${INPUTS[b]} target`; return false; }
+          this.stepInput_[index][b] = r;
+        }
       }
       const g = getField(step, 'goto', 'go');
       if (!isNull(g)) {

@@ -142,7 +142,7 @@
       this._raf = requestAnimationFrame((tt) => this._frame(tt));
     }
 
-    // Press a cuff button in the preview. Returns true if a wait step took it.
+    // Press a cuff button in the preview. Returns true if the sequence took it.
     input(name) {
       const ok = this.engine ? this.engine.handleInput(name) : false;
       this._emit();
@@ -156,6 +156,7 @@
         waitInputs: e ? e.waitInputs() : [],
         waitRemainingMs: e ? e.waitRemainingMs(this.simMs >>> 0) : 0,
         waitStep: e ? e.waitStepIndex() : -1,
+        inputStep: e ? e.inputStepIndex() : -1,
         endReason: e ? e.lastEndReason() : '',
         playing: this.playing,
         timeMs: this.simMs,

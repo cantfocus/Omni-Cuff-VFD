@@ -228,6 +228,11 @@
                  padding: 14px 16px; max-width: 1440px; margin: 0 auto; width: 100%; }
     @media (max-width: 960px) { .ancs-wrap { grid-template-columns: 1fr; } }
     .ancs-col { display: flex; flex-direction: column; gap: 11px; min-width: 0; }
+    .howto-panel > summary { cursor: pointer; list-style: none; user-select: none; }
+    .howto-panel > summary::-webkit-details-marker { display: none; }
+    .howto-panel:not([open]) > summary { border-bottom: none; }
+    .howto-chev { color: var(--dim); font-size: 11px; transition: transform .15s; }
+    .howto-panel[open] .howto-chev { transform: rotate(90deg); }
     .howto { font-size: 12px; line-height: 1.6; }
     .howto h4 { font-size: 12px; margin: 12px 0 4px; color: var(--tx); }
     .howto h4:first-child { margin-top: 0; }
@@ -364,7 +369,7 @@
         <button class="sm pad" data-btn="select" onclick="pvInput('select')">● SELECT</button>
         <label class="pv-lbl" title="Also send INPUT &lt;button&gt; to the connected cuff">
           <input type="checkbox" id="pv-send-input"> Send to cuff</label>
-        <span class="pv-wait" id="pv-wait">no wait active</span>
+        <span class="pv-wait" id="pv-wait">no buttons active</span>
       </div>
     </div>
   </div>
@@ -494,8 +499,8 @@
 
   <div class="ancs-col">
     <!-- Setup -->
-    <div class="panel">
-      <div class="ph"><h3>Setup &amp; pairing (iPhone)</h3></div>
+    <details class="panel howto-panel">
+      <summary class="ph"><h3>Setup &amp; pairing (iPhone)</h3><span class="howto-chev">▸</span></summary>
       <div class="pb howto">
         <p>The cuff uses Apple's built-in notification service (ANCS) and the phone's Current Time Service.
            Nothing needs installing on the iPhone; you pair once and iOS reconnects automatically.</p>
@@ -557,13 +562,16 @@
         <div class="note">Future idea: an iOS Shortcuts automation can post a notification like
           <code>WX 72F Sunny</code> to push weather or anything else to the cuff. See <code>docs/ios-notifications.md</code>.</div>
       </div>
-    </div>
+    </details>
 
     <!-- Animations -->
     <div class="panel">
       <div class="ph">
         <h3>Notification animations</h3>
-        <button class="sm info" onclick="ancsRefresh()">↻ Refresh</button>
+        <span style="display:flex;gap:6px">
+          <button class="sm info" onclick="ancsRefresh()">↻ Refresh</button>
+          <button class="sm" onclick="ancsBackupAll()" title="Download every notification animation and the idle animation as JSON">Backup All</button>
+        </span>
       </div>
       <table class="kind-tbl">
         <thead><tr><th>Kind</th><th>Animation</th><th>On device</th><th></th></tr></thead>
@@ -863,7 +871,12 @@ let stepIdSeq = 1;
 function newStepId() { return stepIdSeq++; }
 
 function mkStep(tt = 'waitMs') {
-  return { id:newStepId(), tt, tv:0, actions:[], flow:'continue', goto:'next', wait:mkWait() };
+  return { id:newStepId(), tt, tv:0, actions:[], flow:'continue', goto:'next', wait:mkWait(), input:mkInput() };
+}
+
+// Non-blocking button targets ("accept input"): same buttons as a wait, no timeout.
+function mkInput() {
+  return { up:'', down:'', left:'', right:'', select:'' };
 }
 
 function mkWait() {
@@ -878,29 +891,32 @@ function normStep(step) {
   if (!step.flow) step.flow = 'continue';
   if (step.goto === undefined) step.goto = 'next';
   if (!step.wait) step.wait = mkWait();
+  if (!step.input) step.input = mkInput();
   return step;
 }
 
-// Target value <-> select option. Internal: '' | 'next' | 'end' | step id (number).
+// Target value <-> select option. Internal: '' | 'next' | 'last' | 'end' | step id (number).
+// next = the following step, last = the final step, end = stop the sequence.
+const NAMED_TARGETS = ['next', 'last', 'end'];
 function targetOptions(selected, allowNone) {
   const opts = [];
   if (allowNone) opts.push(['', '—']);
-  opts.push(['next', 'next'], ['end', 'end']);
+  opts.push(['next', 'next'], ['last', 'last step'], ['end', 'end (exit)']);
   state.steps.forEach((st, i) => opts.push([String(st.id), `Step ${i + 1}`]));
   const cur = String(selected ?? '');
   return opts.map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join('');
 }
 function parseTargetValue(v) {
-  if (v === '' || v === 'next' || v === 'end') return v;
+  if (v === '' || NAMED_TARGETS.includes(v)) return v;
   return parseInt(v, 10);
 }
 function targetOut(t) {
-  if (t === 'next' || t === 'end') return t;
+  if (NAMED_TARGETS.includes(t)) return t;
   const idx = state.steps.findIndex(st => st.id === t);
   return idx >= 0 ? idx + 1 : 'end'; // deleted target: end
 }
 function targetLabel(t) {
-  if (t === 'next' || t === 'end') return t;
+  if (NAMED_TARGETS.includes(t)) return t;
   const idx = state.steps.findIndex(st => st.id === t);
   return idx >= 0 ? `Step ${idx + 1}` : 'end';
 }
@@ -948,7 +964,7 @@ function htmlStep(step, si) {
       <span style="font-size:11px;color:var(--dim);margin-left:6px">then</span>
       <select class="flow-sel" title="What happens after this step's actions run"
               onchange="setFlow(${si}, this.value)">
-        ${sel(step.flow, ['continue', 'goto', 'wait'])}
+        ${FLOW_OPTS.map(([v, l]) => `<option value="${v}"${v === step.flow ? ' selected' : ''}>${l}</option>`).join('')}
       </select>
       ${step.flow === 'goto' ? `<select class="flow-sel" onchange="setGoto(${si}, this.value)">${targetOptions(step.goto, false)}</select>` : ''}
     </div>
@@ -962,14 +978,23 @@ function htmlStep(step, si) {
   </div>
   <div class="step-body ${open?'open':''}">
     ${step.flow === 'wait' ? htmlWait(step, si) : ''}
+    ${step.flow === 'input' ? htmlInput(step, si) : ''}
     <div class="act-list">${step.actions.map((a,ai)=>htmlAction(a,si,ai)).join('')}</div>
     <button onclick="addAction(${si})">+ Add Action</button>
   </div>
 </div>`;
 }
 
+const FLOW_OPTS = [
+  ['continue', 'continue'],
+  ['input',    'accept input'],
+  ['goto',     'go to'],
+  ['wait',     'wait for input'],
+];
+
 function flowBadge(step) {
   if (step.flow === 'wait') return '<span class="flow-badge">⏸ wait</span>';
+  if (step.flow === 'input') return '<span class="flow-badge">⇥ input</span>';
   if (step.flow === 'goto') return `<span class="flow-badge">↪ ${targetLabel(step.goto)}</span>`;
   return '';
 }
@@ -986,6 +1011,21 @@ function htmlWait(step, si) {
     <div class="fg"><label>On timeout</label>
       <select onchange="setWait(${si}, 'timeout', this.value)">${targetOptions(w.timeout, false)}</select></div>
   </div>`;
+}
+
+function htmlInput(step, si) {
+  const t = step.input;
+  const btn = b => `<div class="fg"><label>${b.toUpperCase()}</label>
+      <select onchange="setInput(${si}, '${b}', this.value)">${targetOptions(t[b], true)}</select></div>`;
+  return `<div class="wait-row">
+    <div class="wait-title">Accept input: the animation keeps playing; a button jumps while this step is current
+      (until the next step starts). Buttons set to — keep their normal job.</div>
+    ${WAIT_BUTTONS.map(btn).join('')}
+  </div>`;
+}
+function setInput(si, key, v) {
+  state.steps[si].input[key] = parseTargetValue(v);
+  syncJSON();
 }
 
 function setFlow(si, v) {
@@ -1205,6 +1245,7 @@ const KEY_ALIAS = {
   wait: 'wi',
   timeoutMs: 'tm',
   timeout: 'tg',
+  input: 'ip',
   noLead: 'nl',
   noTrail: 'nt'
 };
@@ -1266,6 +1307,10 @@ function buildJSON() {
     normStep(step);
     if (step.flow === 'goto') {
       s[keyOut('goto')] = targetOut(step.goto);
+    } else if (step.flow === 'input') {
+      const t = {};
+      for (const b of WAIT_BUTTONS) if (step.input[b] !== '') t[b] = targetOut(step.input[b]);
+      s[keyOut('input')] = t;
     } else if (step.flow === 'wait') {
       const w = {};
       for (const b of WAIT_BUTTONS) if (step.wait[b] !== '') w[b] = targetOut(step.wait[b]);
@@ -1316,7 +1361,7 @@ function loadObj(obj, name) {
     if (t === undefined || t === null) return fallback;
     if (typeof t === 'string') {
       const low = t.toLowerCase();
-      if (low === 'next' || low === 'end') return low;
+      if (NAMED_TARGETS.includes(low)) return low;
       t = parseInt(t, 10);
     }
     return (Number.isInteger(t) && t >= 1 && t <= ids.length) ? ids[t - 1] : 'end';
@@ -1361,14 +1406,18 @@ function loadObj(obj, name) {
       return act;
     });
 
-    const st = { id: ids[stepIdx], tt, tv, actions, flow: 'continue', goto: 'next', wait: mkWait() };
+    const st = { id: ids[stepIdx], tt, tv, actions, flow: 'continue', goto: 'next', wait: mkWait(), input: mkInput() };
     const waitRaw = getAny(step, ['wait', 'wi']);
+    const inputRaw = getAny(step, ['input', 'ip']);
     const gotoRaw = getAny(step, ['goto', 'go']);
     if (waitRaw && typeof waitRaw === 'object') {
       st.flow = 'wait';
       for (const b of WAIT_BUTTONS) st.wait[b] = targetIn(waitRaw[b], '');
       st.wait.timeoutMs = getAny(waitRaw, ['timeoutMs', 'tm'], 30000);
       st.wait.timeout = targetIn(getAny(waitRaw, ['timeout', 'tg']), 'next');
+    } else if (inputRaw && typeof inputRaw === 'object') {
+      st.flow = 'input';
+      for (const b of WAIT_BUTTONS) st.input[b] = targetIn(inputRaw[b], '');
     } else if (gotoRaw !== undefined) {
       st.flow = 'goto';
       st.goto = targetIn(gotoRaw, 'next');
@@ -1423,7 +1472,8 @@ function delStep(si) {
   const id = state.steps[si].id;
   const refs = state.steps.filter((st, i) => i !== si && (
     (st.flow === 'goto' && st.goto === id) ||
-    (st.flow === 'wait' && [...WAIT_BUTTONS, 'timeout'].some(k => st.wait[k] === id))));
+    (st.flow === 'wait' && [...WAIT_BUTTONS, 'timeout'].some(k => st.wait[k] === id)) ||
+    (st.flow === 'input' && WAIT_BUTTONS.some(k => st.input[k] === id))));
   const warn = refs.length ? `\n\n${refs.length} step(s) jump here; those jumps will become "end".` : '';
   if (!confirm(`Delete Step ${si+1}?${warn}`)) return;
   if (refs.length) log('inf', `Jumps to deleted Step ${si+1} now go to "end"`);
@@ -1979,12 +2029,7 @@ async function slotBackupAll() {
     if (deviceSlots[i]) occupied.push(i + 1);
   }
 
-  if (occupied.length === 0) {
-    log('inf', 'No occupied slots to back up');
-    return;
-  }
-
-  log('inf', `Backing up ${occupied.length} slot(s)...`);
+  log('inf', `Backing up ${occupied.length} slot(s) and the idle animation...`);
 
   const out = {
     exportedAt: new Date().toISOString(),
@@ -2008,6 +2053,19 @@ async function slotBackupAll() {
       log('err', `Backup kept raw JSON for slot ${slot}: ${e.message}`);
       out.slots.push({ slot, name, raw });
     }
+  }
+
+  // Idle animation (saved copy or the built-in default)
+  let idleRaw = null;
+  try { idleRaw = await ancsLoadRaw('idle', 10000); }
+  catch (e) { log('err', `Backup idle: ${e.message}`); }
+  if (!idleRaw) {
+    log('err', 'Backup skipped idle: no response');
+    out.idle = { error: 'no response' };
+  } else {
+    const source = ancsDataSource.idle || 'unknown';
+    try { out.idle = { source, sequence: JSON.parse(idleRaw) }; log('inf', `Backed up idle (${source})`); }
+    catch (e) { log('err', `Backup kept raw JSON for idle: ${e.message}`); out.idle = { source, raw: idleRaw }; }
   }
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -2310,6 +2368,48 @@ async function ancsLoadRaw(kind, timeoutMs = 8000) {
     sendCmd(kind === 'idle' ? 'IDLE LOAD' : `ANCS LOAD ${kind}`);
     setTimeout(() => finish(null), timeoutMs);
   });
+}
+
+// Download every animation ID (all kinds x roles, plus idle) as one JSON file.
+// Each entry records whether it came from a saved copy or the built-in default.
+async function ancsBackupAll() {
+  if (!bleOk) { log('err', 'Not connected'); return; }
+  const ids = [];
+  for (const { kind } of ANCS_KINDS) {
+    const roles = kind === 'other' ? ANCS_ROLES.slice(0, 1) : ANCS_ROLES;
+    for (const r of roles) ids.push(ancsId(kind, r.role));
+  }
+  ids.push('idle');
+
+  log('inf', `Backing up ${ids.length} notification/idle animation(s)...`);
+  const out = { exportedAt: new Date().toISOString(), source: 'VFD Sequence Editor', animations: [] };
+  let saved = 0;
+  for (const id of ids) {
+    let raw = null;
+    try { raw = await ancsLoadRaw(id, 10000); }
+    catch (e) { log('err', `Backup ${id}: ${e.message}`); }
+    if (!raw) {
+      out.animations.push({ id, source: 'none' });   // e.g. "other" with nothing saved
+      continue;
+    }
+    const source = ancsDataSource[id] || 'unknown';
+    if (source === 'saved') saved++;
+    try { out.animations.push({ id, source, sequence: JSON.parse(raw) }); }
+    catch (e) {
+      log('err', `Backup kept raw JSON for ${id}: ${e.message}`);
+      out.animations.push({ id, source, raw });
+    }
+  }
+
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const fileName = `vfd-ancs-backup-${ts}.json`;
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log('inf', `Backup downloaded: ${fileName} (${saved} saved, ${ids.length - saved} built-in/none)`);
 }
 
 async function ancsEdit(kind) {
@@ -2625,7 +2725,7 @@ function pvOnSequenceEdited() {
 
 async function pvInput(btn) {
   const handled = pvSim ? pvSim.input(btn) : false;
-  if (!handled) log('inf', `Preview: ${btn.toUpperCase()} not handled by a wait (normal button job on the cuff)`);
+  if (!handled) log('inf', `Preview: ${btn.toUpperCase()} not handled by the sequence (normal button job on the cuff)`);
   if (document.getElementById('pv-send-input').checked && bleOk) await sendCmd(`INPUT ${btn}`);
 }
 
@@ -2636,8 +2736,11 @@ function pvUpdatePad(s) {
   if (s.waiting) {
     el.textContent = `Step ${s.waitStep + 1} waiting: ${[...armed].join(', ').toUpperCase() || 'timeout only'} · ${(s.waitRemainingMs / 1000).toFixed(1)} s left`;
     el.classList.add('on');
+  } else if (s.inputStep >= 0 && armed.size) {
+    el.textContent = `Step ${s.inputStep + 1} accepts: ${[...armed].join(', ').toUpperCase()}`;
+    el.classList.add('on');
   } else {
-    el.textContent = 'no wait active';
+    el.textContent = 'no buttons active';
     el.classList.remove('on');
   }
 }
